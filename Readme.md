@@ -52,20 +52,20 @@ joyent_inital_user : "ubuntu"  # over ride with 'root' for smartos machines
 ## ************ Extract machine Name ********
 ## Define what part of fqdn is the hostname lets say "postgresql00.de.prod.example.com"
 ## Option (A) We can use subdomain level from left
-##     i.e. use 'hostname_sub_level' and set
+##     i.e. use 'joyent_hostname_sub_level' and set
 ##       value "1"  result is "postgresql00"
 ##       value "3"  result is "postgresql00.de.prod"
 ##  To enable override somewhere in hostvar or inventory file
 ##
 ## Option (B) We define top level domain to exclude
-##     i.e.use 'hostname_sub_replace'
+##     i.e.use 'joyent_hostname_sub_replace'
 ##       value "de.prod.example.com"  result is "postgresql00"
 ##       value "example.com" result is "postgresql00.de.prod"
 ##  To enable override somewhere in hostvar or inventory file
 ## Option (C) We do nothing and in just user value in inventory_hostname thats the default
 ##     i.e.
-hostname_sub_level    :  false
-hostname_sub_replace  :  false
+joyent_hostname_sub_level    :  false
+joyent_hostname_sub_replace  :  false
 
 ## ************ Should wait for machine state to change ********
 joyent_fire_forget    : "false"

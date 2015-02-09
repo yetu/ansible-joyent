@@ -1,12 +1,12 @@
-{% if hostname_sub_level is defined and hostname_sub_level %}
-{% set hostname_sub_level_array = inventory_hostname.split(".") %}
-{% if hostname_sub_level_array | length >=  hostname_sub_level %}
-{{ hostname_sub_level_array[0:hostname_sub_level] | join(".") -}}
+{% if joyent_hostname_sub_level is defined and joyent_hostname_sub_level %}
+{% set joyent_hostname_sub_level_array = inventory_hostname.split(".") %}
+{% if joyent_hostname_sub_level_array | length >=  joyent_hostname_sub_level %}
+{{ joyent_hostname_sub_level_array[0:joyent_hostname_sub_level] | join(".") -}}
 {% else %}
 {{ inventory_hostname -}}
 {% endif %}
-{% elif hostname_sub_replace is defined and  hostname_sub_replace %}
-{{ inventory_hostname | replace("." + hostname_sub_replace,"") -}}
+{% elif joyent_hostname_sub_replace is defined and  joyent_hostname_sub_replace %}
+{{ inventory_hostname | replace("." + joyent_hostname_sub_replace,"") -}}
 {% else %}
 {{ inventory_hostname -}}
 {% endif %}

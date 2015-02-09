@@ -1,0 +1,400 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+__author__ = 'Adham Helal'
+__version__ = "0.2.1"
+
+DOCUMENTATION = '''
+---
+module: joyent
+short_description: Manage instances in joyent SDC cloud
+description:
+    - create, delete, start or stop instances in joyent
+version: "{}"
+options:
+    name:
+        description:
+          - Name of instances
+        required: true
+        default: null
+        aliases: ['']
+
+    state:
+        description:
+          - State of instances
+        required: true
+        default: 'present'
+        choices: ['present', 'absent', 'running', 'stopped']
+        aliases: ['']
+
+    user_name:
+        description:
+            - joyent SDC username
+        required: false
+        default: null
+        aliases: ['']
+
+    key_name:
+        description:
+            - joyent SDC RSA key name
+        required: false
+        default: null
+        aliases: ['']
+
+    private_key:
+        description:
+            - ssh RSA private key path to use for signing calls
+        required: True
+        default: "~/.ssh/id_rsa"
+        aliases: ['']
+
+    image:
+        description:
+          - Instance image name, required for creation of an instances
+        required: False
+        default: 'sdc:canonical:ubuntu-certified-12.04:20140806'
+        aliases: ['']
+
+    flavor:
+        description:
+          - Instance flavor name, required for creation of an instances
+        required: False
+        default: 'g3-standard-0.625-kvm"'
+        aliases: ['']
+
+    networks:
+        description:
+          - Instance network(s) comma separated.
+        required: False
+        default: null
+        aliases: ['']
+
+    data_center:
+        description:
+            - Joyent data center code
+        required: True
+        default: "eu-ams-1"
+        choices: ["eu-ams-1", "us-west-1", "us-east-1"]
+        aliases: ['']
+
+    tags:
+        description:
+            - TODO: FILL ME
+        required: false
+        default: null
+        aliases: ['']
+
+    fail_on_warning:
+        description:
+            - Will make module fail on warning message
+        required: True
+        default:True
+        aliases: ['']
+
+    fire_forget:
+        description:
+            - Don't wait for state changes
+        required: True
+        default: True
+        aliases: ['']
+dependencies:
+    dynect_client
+    To pip install smartdc
+
+'''.format(__version__)
+
+EXAMPLES = '''
+#TODO FINISH THIS
+# Provision
+- joyent blaa.........
+'''
+
+
+
+'''
+TODO:
+ - Warn if mismatch between provisioned and arguments
+
+'''
+
+# Todo Change me to dic rather than a class
+class MachineType:
+    def __init__(self):
+        self.id = None
+        self.ips = None
+        self.state = None  # Running Stopping Stopped Deleted offline failed
+        self.dataset = None
+        self.package = None
+        self.instance = None
+        self.networks = None
+
+
+class Timer:
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, *args):
+        self.end = time.time()
+        self.interval = self.end - self.start
+
+
+class JoyentCloud():
+    def __init__(self, module):
+        self.module = module
+        # Variables
+        self.sdc = None
+        self.msg = None
+        self.machines = None
+        self.matched_machines = []
+        self.machine = MachineType()
+        self.changed = False
+        self.tags = dict()
+        # Init attributes
+        #   Get Key name 1st from params if not check env variable
+        if self.module.params["key_name"]:
+            self.joyent_key_name = self.module.params["key_name"]
+        elif os.getenv('JOYENT_KEYNAME'):
+            self.joyent_key_name = os.getenv('JOYENT_KEYNAME')
+        else:
+            self.module.fail_json(msg="'key_name' parameter not set or 'JOYENT_KEYNAME' environment variable not set")
+        #   Get User name 1st from params if not check env variable
+        if self.module.params["user_name"]:
+            self.joyent_user_name = self.module.params["user_name"]
+        elif os.getenv('JOYENT_USERNAME'):
+            self.joyent_user_name = os.getenv('JOYENT_USERNAME')
+        else:
+            self.module.fail_json(msg="'user_name' parameter not set or 'JOYENT_USERNAME' environment variable not set")
+
+        self.key_id = "/" + self.joyent_user_name + "/keys/" + self.joyent_key_name
+        self.id_rsa = self.module.params["private_key"]
+        self.location = self.module.params["data_center"]
+        self.name = self.module.params["name"]
+        self.state = self.module.params["state"]
+        self.dataset = self.module.params["image"]
+        self.package = self.module.params["flavor"]
+        self.time_out = self.module.params["time_out"]
+        if self.module.params["networks"]:
+            #TODO to a strip to cut white spaces
+            self.networks = self.module.params["networks"].split(",")
+        else:
+            self.networks = None
+        if self.module.params["tags"]:
+            self.tags.update(self.module.params["tags"])
+        self.tags.update({"provisioner": self.joyent_key_name})  # who provisioned the image
+        self.tags.update({"provisioner_ver": "ansible_joyent_%s" % __version__})  # version
+        self.fire_forget = self.module.params["fire_forget"]
+        self.data_center = self.module.params["data_center"]
+        self.fail_on_warning = self.module.params["fail_on_warning"]
+
+    def login(self):
+        try:
+            self.sdc = DataCenter(location=self.location, key_id=self.key_id, secret=self.id_rsa, allow_agent=True,
+                                  verbose=False)
+            self.sdc.datasets()
+        except Exception as e:
+            self.module.fail_json(msg="Failed to login: %s" % e)
+
+    def machine_status(self, status, verb):
+        if self.fire_forget:
+            self.msg = "Machine is in process of being '{}'".format(verb)
+        else:
+            # Poll till status or timeout
+            time_out_time = time.time() + int(self.time_out)
+            while 1:
+                try:
+                    instance_status = self.machine.instance.status()
+                except Exception as e:
+                    if "410 Client Error: Gone" in e.message:
+                        instance_status = "deleted"
+                    else:
+                        self.module.fail_json(msg="Exception in API, Error msg='%s'" % e)
+
+                if time.time() > time_out_time or instance_status == status:
+                    break
+                elif instance_status == "failed":
+                    self.module.fail_json(msg="API reported machine status 'failed' UID='{}'"
+                                          .format(self.machine.instance.id))
+                time.sleep(2)
+
+            if not instance_status == status:
+                self.module.fail_json(
+                    msg="Timed out after '{}' attempting to '{}' machine. State '{}' not reached. Last known state '{}'"
+                    .format(self.time_out, verb, status, instance_status))
+            self.msg = "Machine is '{}'".format(verb)
+
+    def list_machines(self):
+        # TODO: For now we get all Servers in future we can filter calls
+        try:
+            self.machines = self.sdc.machines(name=self.name)
+        except Exception as e:
+            self.module.fail_json(msg="Unable to search for server: %s" % e)
+
+    def warning_msg(self, message):
+        if self.fail_on_warning:
+            self.msg = message
+        else:
+            self.module.fail_json(msg=message)
+
+    def server_match(self):
+        self.list_machines()
+        for server in self.machines:
+            if self.name == server.name:
+                self.matched_machines.append(server)
+
+    def select_single_server(self):
+        self.server_match()
+        if len(self.matched_machines) == 1:
+            # Found 1 server
+            self.machine.id = self.matched_machines[0].id
+            self.machine.ips = self.matched_machines[0].ips
+            self.machine.state = self.matched_machines[0].state
+            self.machine.dataset = self.matched_machines[0].dataset
+            ## pending pull request to work properly
+            #self.machine.package = self.matched_machines[0].package
+            #self.machine.networks = self.matched_machines[0].networks
+            self.machine.instance = self.matched_machines[0]
+            return True
+        elif len(self.matched_machines) == 0:
+            # Failed to find server
+            return False
+        else:
+            # Found more than 1 server matching name OUY
+            self.module.fail_json(msg="Search failed: returned '%d' results. Should return 1" % len(self.matched_machines))
+
+    def server_create(self):
+        if self.select_single_server():
+            self.msg = "Machine already exists."
+            return False
+        else:
+            if self.module.check_mode:
+                return True
+            try:
+                sm = self.sdc.create_machine(name=self.name, dataset=self.dataset, package=self.package, tags=self.tags,
+                                             networks=self.networks)
+                self.machine.instance = sm
+            except Exception as e:
+                try:
+                    self.module.fail_json(msg="Failed to create instances, Error msg='%s' More info '%s'"
+                                              % (e, e.response.text))
+                except:
+                    self.module.fail_json(msg="Failed to create instances, Error msg='%s'" % e)
+
+            self.machine_status("running", "created")
+            return True
+
+    def server_delete(self):
+        if self.select_single_server():
+            if self.module.check_mode:
+                return True
+
+            try:
+                self.machine.instance.delete()
+            except Exception as e:
+                self.module.fail_json(msg="Failed to delete instances, Error msg='%s', response='%s' " % e)
+
+            self.machine_status("deleted", "deleted")
+            return True
+        else:
+            self.msg = "Machine does not exist. Nothing needs to be done"
+            return False
+
+    def server_stop(self):
+        if self.select_single_server():
+            if self.machine.state == "running":
+                if self.module.check_mode:
+                    return True
+                else:
+                    self.machine.instance.stop()
+                    self.machine_status("stopped", "stopped")
+                    return True
+            elif self.machine.state == "stopping" or self.machine.state == "stopped":
+                self.msg = "State is %s Nothing needs to be done" % self.machine.state
+                return False
+            else:
+                self.warning_msg("Machine is not in a state='%s' to be stopped" % self.machine.state)
+                return False
+        else:
+            self.warning_msg("Machine does not exist")
+            return False
+
+    def server_run(self):
+        if self.select_single_server():
+            if self.machine.state == "stopped" or self.machine.state == "stopping":
+                if self.module.check_mode:
+                    return True
+                else:
+                    self.machine.instance.start()
+                    self.machine_status("running", "started")
+                    return True
+            elif self.machine.state == "running":
+                self.msg = "State is %s Nothing needs to be done" % self.machine.state
+                return False
+            else:
+                self.warning_msg("Machine is not in a state='%s' to be started" % self.machine.state)
+                return False
+        else:
+            self.warning_msg("Machine does not exist")
+            return False
+
+    def main(self):
+        with Timer() as t:
+            self.login()
+            # Select action
+            if self.state == "absent":
+                self.changed = self.server_delete()
+            elif self.state == "present":
+                self.changed = self.server_create()
+            elif self.state == "running":
+                self.changed = self.server_run()
+            elif self.state == "stopped":
+                self.changed = self.server_stop()
+        interval = ('Request took %s sec.' % t.interval)  # Time call
+        if self.module.check_mode:
+            self.module.exit_json(changed=self.changed, msg=self.msg, machine_name=self.name, timer=interval)
+        elif self.state == "absent":
+            self.module.exit_json(changed=self.changed, msg=self.msg, machine_name=self.name, timer=interval,
+                                  id=self.machine.id, ips=None)
+        else:
+            self.module.exit_json(changed=self.changed, msg=self.msg, machine_name=self.name,
+                                  timer=interval, id=self.machine.id, ips=self.machine.instance.ips,
+                                  state=self.machine.instance.state, dataset=self.machine.instance.dataset)
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            name=dict(default=None, required=True),
+            state=dict(default="present", choices=["absent", "present", "running", "stopped"]),
+            image=dict(default="sdc:canonical:ubuntu-certified-12.04:20140806"),
+            flavor=dict(default="g3-standard-0.625-kvm"),
+            networks=dict(default=None),
+            data_center=dict(default="eu-ams-1", choices=["eu-ams-1", "us-west-1", "us-east-1"]),
+            key_name=dict(default=None),
+            user_name=dict(default=None),
+            private_key=dict(default="~/.ssh/id_rsa", no_log=True),
+            tags=dict(default=None, type="dict"),
+            fail_on_warning=dict(default=True, choices=BOOLEANS, type="bool"),
+            fire_forget=dict(default=True, choices=BOOLEANS, type="bool"),
+            time_out=dict(default=500, typ="int"),
+        ),
+        supports_check_mode=True
+    )
+    if not smartdc_client_found:
+            module.fail_json(msg="The ansible joyent module requires smartdc library. use 'pip install smartdc' ")
+
+    JoyentCloud(module).main()
+
+
+import os
+import time
+try:
+    from smartdc import DataCenter
+except ImportError:
+    smartdc_client_found = False
+else:
+    smartdc_client_found = True
+
+# import module snippets
+from ansible.module_utils.basic import *
+main()

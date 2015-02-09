@@ -1,0 +1,19 @@
+---
+
+- name: ip_rules | Fetch IP that match rules
+  iplookup:
+    ips: "{{ joyent_server.ips }}"
+    rules : "{{ joyent_match_rules }}"
+  connection: local
+  sudo: False
+  register: result_ip
+  when: dynect_ip is not defined or dynect_ip == ""
+
+- name: ip_rules | Set  IP match rule
+  set_fact:
+    dynect_ip="{{ result_ip.matched_ip }}"
+  when: dynect_ip is not defined or dynect_ip == ""
+
+- name:  ip_rules | Matched dynect_ip
+  debug:
+    msg="Will use the following IP {{dynect_ip}}"

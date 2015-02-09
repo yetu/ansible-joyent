@@ -1,0 +1,18 @@
+---
+
+## This uses a hack to get a hosts shortname with jinj2 templates
+## Look into a better way to do that
+- name: provision | Ensure machine is provisioned
+  joyent:
+     name="{{ lookup('template', '../templates/shortname.j2') }}"
+     image="{{mach_image}}"
+     flavor="{{mach_flavor}}"
+     state="{{mach_state | default('present')}}"
+     networks="{{mach_networks}}"
+     data_center="{{mach_dc}}"
+     fire_forget="{{ joyent_fire_forget }}"
+     key_name="{{ joyent_key_name| default(omit) }}"
+     user_name="{{ joyent_user_name| default(omit) }}"
+     private_key="{{ joyent_private_key | default(omit) }}"
+     tags="{{ joyent_tags | default(omit) }}"
+  register: joyent_server

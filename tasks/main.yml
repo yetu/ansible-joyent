@@ -1,0 +1,11 @@
+---
+
+- include: provision.yml
+
+- include: ip_rules.yml
+  when: mach_state is defined and mach_state == "present"
+
+- include: ssh.yml
+  when: mach_state is defined and mach_state == "present"
+
+

@@ -1,0 +1,38 @@
+---
+
+- name: ssh | Wait for ssh port to open on ansible_ssh_host
+  wait_for:
+    port=22
+    host="{{ ansible_ssh_host }}"
+    delay=1
+    timeout=5
+    search_regex=OpenSSH
+  register: ansible_ssh_working
+  ignore_errors: yes
+  when: ansible_ssh_host is defined
+
+- name: ssh | Wait for ssh port to open on FQDN
+  wait_for:
+    port=22
+    host="{{ inventory_hostname }}"
+    delay=1
+    timeout=5
+    search_regex=OpenSSH
+  register: fqdn_working
+  ignore_errors: yes
+  when: ansible_ssh_working | skipped or ansible_ssh_working | failed
+
+- name: ssh | Set ansible_ssh_host to IP for initial communication (to avoid DNS delay)
+  set_fact:
+    ansible_ssh_host="{{ dynect_ip }}"
+    ansible_ssh_user="{{ joyent_inital_user }}"
+  when: fqdn_working | failed
+
+- name: ssh | Wait for ssh port to open on dynect_ip
+  wait_for:
+    port=22
+    host="{{ dynect_ip }}"
+    delay=1
+    timeout=300
+    search_regex=OpenSSH
+  when: joyent_server | changed

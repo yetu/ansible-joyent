@@ -7,7 +7,7 @@ mach_flavor             : "g3-standard-1-kvm"
 ## Datacenters https://www.joyent.com/public-cloud/data-centers
 mach_dc                 : "eu-ams-1"
 ## Comma seperated network UIDs
-mach_networks           : "1e7bb0e1-25a9-43b6-bb19-f79ae9540b39"
+#mach_networks           : "1e7bb0e1-25a9-43b6-bb19-f79ae9540b39"
 ## Credentials if the following is not defined will fall back to bash environment variables 
 #joyent_key_name        : "mykey"          # if not defined will fall back env var $JOYENT_USERNAME
 #joyent_user_name       : "myuser"         # if not defined will fall back env var $JOYENT_KEYNAME

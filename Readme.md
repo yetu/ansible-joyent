@@ -6,7 +6,7 @@ A role to provision and manage machines in joyents SDC
 Variables
 ---------
 
-```
+```yaml
 ## ********** Machine parameters **********
 mach_state              : "present"  # ["absent", "present", "running", "stopped"]
 ## Image and flavor https://www.joyent.com/public-cloud/pricing
